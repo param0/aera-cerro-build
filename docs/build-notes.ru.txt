@@ -1,0 +1,51 @@
+AERA Recovery R1.0 Beta — Nubia Z60 Ultra (NX721J / cerro)
+==========================================================
+Собрано 2026-11-09 из манифеста AERA aera-16.0 (база AOSP android-16.0.0_r1)
+на дереве delvoryx/android_device_nubia_cerro-recovery (fox_14.1).
+Пересобирается скриптом ~/build-aera-cerro.sh (NO_SYNC=1 — без синка).
+
+ФАЙЛЫ
+-----
+AERA-R1.0-Beta-Unofficial-cerro.img   100 МБ — образ для fastboot/EDL
+AERA-R1.0-Beta-Unofficial-cerro.zip    92 МБ — установщик, прошивается из recovery
+*.md5                                  контрольные суммы
+
+  img: 99790f139ff3d9ca81105afcceb72747
+  zip: ed54c6922fd272b31b0aaba02fa70c33
+
+ПРОШИВКА ЧЕРЕЗ FASTBOOT
+-----------------------
+  export PATH=/opt/android-sdk/platform-tools:$PATH
+  adb reboot bootloader
+  fastboot flash recovery_b AERA-R1.0-Beta-Unofficial-cerro.img
+  fastboot reboot recovery
+
+Раздел слот-суффиксный: recovery_b для активного слота _b (проверить:
+adb shell getprop ro.boot.slot_suffix). Раздел ровно 100 МБ, образ занимает
+102,36 МБ ramdisk + заголовок, запас 2,47 МБ.
+
+ЕСЛИ ТЕЛЕФОН НЕ ГРУЗИТСЯ В RECOVERY
+-----------------------------------
+Откат на рабочий OrangeFox: ~/cerro-edl/orangefox/recovery.img
+  fastboot flash recovery_b ~/cerro-edl/orangefox/recovery.img
+Если телефон уходит в ZTE memory dump mode — держать Power ~20 секунд,
+система в слоте грузится независимо от recovery. Крайний случай — EDL,
+см. ~/cerro-edl/README.txt
+
+ЧТО РАБОТАЕТ (проверено на устройстве)
+--------------------------------------
+- Загрузка, дешифровка /data, монтирование разделов, перезагрузка из меню
+- ADB в обычном режиме (не только sideload)
+- Интерфейс по разрешению панели 1116x2480, 33 языка, по умолчанию русский,
+  китайский с шрифтами MiSans
+- Wi-Fi: сканирование и подключение (драйвер qca_cld3_kiwi_v2 + WCNSS ini)
+- Каталог плагинов AERA (качается через встроенный busybox wget)
+- Браузер (WPE WebKit, движок распаковывается в RAM по требованию)
+
+ЧЕГО НЕТ
+--------
+- Мобильный интернет через SIM: generic AERA содержит только клиента
+  (/dev/socket/aera-cellular), демон-провайдер поставляет дерево устройства,
+  и существующий написан под OnePlus. Для nubia нужен отдельный порт.
+- Офлайн-модули рута (KernelSU/SukiSU) выключены: 5,8 МБ отданы движку
+  браузера. Качаются из сети при необходимости.

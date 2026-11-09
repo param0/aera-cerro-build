@@ -1,0 +1,115 @@
+EDL-прошивка recovery для Nubia Z60 Ultra (NX721J / cerro)
+==========================================================
+Подготовлено 2026-11-09. Основа — пакет "recovery repair edl V2".
+
+СОДЕРЖИМОЕ
+----------
+orangefox/    OrangeFox от delvoryx — РАБОЧИЙ, им спасаемся
+aera-v2/      aera_recovery_cerro_v2_signed.img — доходит до анимации и
+              встаёт (нет adb, нет монтирования, нет батареи)
+aera-local/   наша сборка AERA-R1.0-Stable-Unofficial-cerro — уходит в
+              ZTE memory dump mode
+В каждой папке одинаковый набор: firehose.elf (программатор),
+rawprogram4.xml (куда писать), patch4.xml (правка GPT), recovery.img.
+Образ ВСЕГДА называется recovery.img — так на него ссылается rawprogram4.xml.
+Чтобы прошить другой образ, просто работай из другой папки.
+
+Что пишет rawprogram4.xml: recovery.img в ОБА слота (recovery_a, recovery_b),
+LUN 4, сектор 4096 байт, по 100 МБ. Другие разделы не трогаются.
+
+ВАЖНО: DUMP MODE != EDL
+-----------------------
+  19d2:0112  ZTE ... QUSB_BULK_CID:0448   -> memory dump mode. ПРОШИТЬ НЕЛЬЗЯ.
+  05c6:9008  Qualcomm QDLoader HS-USB     -> настоящий EDL. Прошивать можно.
+
+Телефон после паники сам уходит в dump mode. Он тоже говорит по Sahara,
+поэтому edl его видит и даже загружает firehose, но затем падает с
+  "Error, couldn't find suitable enprg/nprg loader :("
+Это не проблема загрузчика: в dump mode устройство рапортует режим
+SAHARA_MODE_MEMORY_DEBUG и умеет только отдавать содержимое RAM.
+
+КАК ПОПАСТЬ В EDL
+-----------------
+1) Выйти из dump mode: держать Power ~20 секунд до полного выключения.
+2) Войти в EDL одним из способов:
+     с выключенного  - зажать Vol+ и Vol- вместе и вставить USB
+     из системы      - adb reboot edl
+     из fastboot     - fastboot oem edl   (или fastboot reboot-edl)
+3) Проверить, что это именно EDL:
+     lsusb | grep -iE '05c6:9008|19d2:0112'
+   Должно быть 05c6:9008. Если снова 19d2:0112 — это опять dump mode,
+   повторить с п.1.
+
+adb/fastboot на этой машине не установлены: sudo pacman -S android-tools
+
+В настоящем EDL (05c6:9008) --vid/--pid не нужны, он в списке edl есть:
+  edlq() { sudo ~/.venvs/edl/bin/edl "$@"; }
+  cd ~/cerro-edl/orangefox
+  edlq printgpt --lun 4 --loader firehose.elf
+
+ДИАГНОСТИКА ИЗ DUMP MODE (только чтение, опционально)
+------------------------------------------------------
+Пока телефон в dump mode, из него можно вытащить дамп RAM с причиной паники:
+  cd /tmp && sudo ~/.venvs/edl/bin/edl --vid 0x19d2 --pid 0x0112 memorydump
+Это ничего не пишет в телефон, но выгружает гигабайты и занимает много
+времени на USB. Нужно только если хочется разобраться, почему упало.
+
+ВАРИАНТ 1. С ЭТОЙ МАШИНЫ (инструмент уже установлен)
+-----------------------------------------------------
+edl-клиент (bkerler/edl) лежит в ~/.venvs/edl/bin/edl.
+Нужен sudo — иначе нет доступа к USB-устройству.
+PID 19d2:0112 в списке edl отсутствует, поэтому указываем его явно.
+
+Для краткости объявить функцию (в zsh переменная с командой НЕ сработает:
+zsh не делит значение переменной на слова, вся строка уйдёт как имя файла):
+  edlx() { sudo ~/.venvs/edl/bin/edl --vid 0x19d2 --pid 0x0112 "$@"; }
+
+1) Убедиться, что связь есть, и посмотреть таблицу разделов (только чтение):
+     cd ~/cerro-edl/orangefox
+     edlx printgpt --lun 4 --loader firehose.elf
+   В списке должны быть recovery_a и recovery_b.
+
+2) Прошить OrangeFox в оба слота (по метке раздела, GPT не трогаем):
+     cd ~/cerro-edl/orangefox
+     edlx w recovery_a recovery.img --lun 4 --loader firehose.elf
+     edlx w recovery_b recovery.img --lun 4 --loader firehose.elf
+
+3) Выйти из EDL:
+     edlx reset
+
+Альтернатива — ровно то, что задумал автор пакета (пишет оба слота сам,
+но дополнительно применяет patch4.xml к GPT):
+     cd ~/cerro-edl/orangefox
+     edlx qfil rawprogram4.xml patch4.xml . --loader firehose.elf
+
+Либо вообще без функции, полным путём:
+     sudo ~/.venvs/edl/bin/edl --vid 0x19d2 --pid 0x0112 printgpt --lun 4 \
+          --loader firehose.elf
+
+Вариант из п.2 предпочтительнее: он не прикасается к GPT.
+
+ВАРИАНТ 2. WINDOWS, EDL Master / QFIL
+--------------------------------------
+1) Драйвер Qualcomm QDLoader HS-USB. В диспетчере устройств должен появиться
+   "Qualcomm HS-USB QDLoader 9008" (у ZTE может называться QUSB_BULK).
+2) Скопировать на Windows-машину папку orangefox целиком.
+3) В программе указать:
+     Programmer / Flat Build  -> firehose.elf
+     RawProgram               -> rawprogram4.xml
+     Patch                    -> patch4.xml
+     Image dir                -> та же папка
+4) Запустить Download/Flash. НЕ включать "Erase All" / "Full flash" —
+   иначе снесёт разделы, которых в этом пакете нет, и телефон умрёт целиком.
+
+ПОСЛЕ ПРОШИВКИ
+--------------
+Загрузка в recovery: с выключенного зажать Power + Vol+.
+Если recovery грузится — дальше можно пробовать другие образы, подменяя папку.
+
+ЧЕГО НЕ ДЕЛАТЬ
+--------------
+- Не запускать rawprogram/patch из других прошивок: там перечислены все
+  разделы, включая xbl/tz, и неудачная запись = полный кирпич.
+- Не стирать разделы командой e/es без явной необходимости.
+- firehose.elf из этого пакета — для sm8650; с чужими программаторами не
+  смешивать.

@@ -1,0 +1,78 @@
+AERA Recovery R1.0 Beta — Nubia Z60 Ultra (NX721J / cerro)
+==========================================================
+Built 2026-11-09 from the AERA aera-16.0 manifest (AOSP android-16.0.0_r1 base)
+on top of delvoryx/android_device_nubia_cerro-recovery (branch fox_14.1).
+Rebuild with ~/build-aera-cerro.sh (NO_SYNC=1 skips the repo sync).
+
+FILES
+-----
+AERA-R1.0-Beta-Unofficial-cerro.img   100 MB — image for fastboot / EDL
+AERA-R1.0-Beta-Unofficial-cerro.zip    92 MB — installer, flashable from recovery
+*.md5                                  checksums
+
+  img: 99790f139ff3d9ca81105afcceb72747
+  zip: ed54c6922fd272b31b0aaba02fa70c33
+
+FLASHING WITH FASTBOOT
+----------------------
+  export PATH=/opt/android-sdk/platform-tools:$PATH
+  adb reboot bootloader
+  fastboot flash recovery_b AERA-R1.0-Beta-Unofficial-cerro.img
+  fastboot reboot recovery
+
+The partition is slot-suffixed: use recovery_b for active slot _b (check with
+adb shell getprop ro.boot.slot_suffix). The partition is exactly 100 MB; this
+image uses a 102.36 MB ramdisk plus header, leaving 2.47 MB of headroom.
+
+IF IT DOES NOT BOOT INTO RECOVERY
+---------------------------------
+Roll back to the working OrangeFox build: ~/cerro-edl/orangefox/recovery.img
+  fastboot flash recovery_b ~/cerro-edl/orangefox/recovery.img
+If the phone drops into ZTE memory dump mode, hold Power for ~20 seconds; the
+system in the active slot boots independently of recovery, so fastboot stays
+reachable. Last resort is EDL — see ~/cerro-edl/README.txt
+
+WHAT WORKS (verified on the device)
+-----------------------------------
+- Boot, /data decryption, partition mounting, reboot from the menu
+- ADB in normal recovery mode, not only in sideload
+- UI matched to the 1116x2480 panel, 33 languages, Russian by default,
+  Chinese with MiSans fonts
+- Wi-Fi: scanning and connecting (qca_cld3_kiwi_v2 driver + WCNSS ini)
+- AERA plugin catalog (downloaded through the bundled busybox wget)
+- Browser (WPE WebKit; the engine is expanded into RAM on demand)
+
+WHAT IS MISSING
+---------------
+- Mobile data over SIM: generic AERA ships only the client side
+  (/dev/socket/aera-cellular). The provider daemon comes from the device tree
+  and the existing one targets OnePlus hardware, so nubia needs its own port.
+- Offline root providers (KernelSU / SukiSU) are disabled: their 5.8 MB went to
+  the browser engine. They are downloaded on demand instead.
+
+DEVICE-SPECIFIC FIXES IN THIS BUILD
+-----------------------------------
+Each of these was required to make AERA work on cerro; all are applied by the
+build script and documented inline there:
+
+1. Release name ap2a -> bp2a (the device tree targets Android 14).
+2. TARGET_RECOVERY_PIXEL_FORMAT quoting — the quoted value leaks into
+   soong.*.extra.variables and breaks the JSON merge at ~90% of the build.
+3. The A14 prebuilt libc++.so from the device tree shadows the A16 one and
+   lacks symbols init needs, which killed PID 1 and panicked the kernel.
+4. Same for the A14 vendor-side libbinder/libbinder_ndk pair, which broke
+   keymint, gatekeeper, the boot HAL and the health HAL.
+5. AERA_BUILD_TYPE must not be Stable — Stable enables OF_ADVANCED_SECURITY,
+   which disables ADB and MTP on purpose.
+6. AERA_UI_ADAPTIVE_RESOLUTION with AERA_SCREEN_H=2400 — otherwise the UI is
+   laid out for a 1440x3168 panel.
+7. sys.usb.config has to be set explicitly, or adbd never starts.
+8. Wi-Fi needs rfkill from system_dlkm, the WCNSS ini staged from the vendor
+   partition, and modprobe with canonically mounted dlkm partitions.
+9. The browser jail needs cgroup2 mounted at /dev/cg2_bpf and the msm_kgsl
+   GPU driver loaded so /dev/kgsl-3d0 exists.
+
+CREDITS
+-------
+- Device tree: delvoryx (android_device_nubia_cerro-recovery)
+- Recovery: AERA Recovery Project, itself a fork of OrangeFox / TWRP
